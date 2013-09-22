@@ -180,4 +180,8 @@ object Test {
               ('x6 or 'x5.not)
 
   val test3 = symbolToDisjunction('x) and WrappedDisjunction(Seq('x.not))
+
+  val test4 = ('a or 'b or 'c) and ('b or 'c.not or 'f.not) and ('b.not or 'e)
+
+  val test5 = ('a or 'b) and ('a or 'b.not) and ('a.not or 'c) and ('a.not or 'c.not)
 }
