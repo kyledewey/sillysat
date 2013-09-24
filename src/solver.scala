@@ -129,6 +129,8 @@ object Solver {
 
   def solve(problem: CNF): Option[Map[Variable, Boolean]] = {
     import scala.collection.mutable.Stack
+    var numChoices = 0
+    var numBacktracks = 0
     var clauses = problem.clauses
     val vars = problem.variables
     // decisions to try in case of backtracking
@@ -159,9 +161,10 @@ object Solver {
             val decisionLevel = tryFalseStack.size
             // note that we still need to try the false path
             tryFalseStack.push((choice, 
-                                newState.makeChoice(choice, false, decisionLevel)))
+                                newState.makeChoice(choice, false, decisionLevel - 1)))
 
             // try with true
+            numChoices += 1
             currentState = newState.makeChoice(choice, true, decisionLevel)
             justFlipped = Some(choice)
           }
@@ -169,21 +172,18 @@ object Solver {
         case Left(Some((c, dl))) => {
           // We hit a conflict, and we have a learned clause that illustrates what needs
           // to be asserted in order to ensure we don't hit this same conflict again
+          println("ADDING CLAUSE: " + c)
           clauses ::= c
           
           // backtrack up to the level specified
-          println("STACK SIZE: " + tryFalseStack.size)
-          println("DL: " + dl)
-
-          val stackSize = tryFalseStack.size
-          assert(dl <= stackSize)
-
           val popUpTimes = tryFalseStack.size - dl - 1
           (0 until popUpTimes).foreach(_ => tryFalseStack.pop)
           
           // try from the last backtracking point
           if (tryFalseStack.nonEmpty) {
             val (v, state) = tryFalseStack.pop
+            numChoices += 1
+            numBacktracks += 1
             currentState = state
             justFlipped = Some(v)
           } else {
@@ -198,6 +198,8 @@ object Solver {
       } // applyUnitToAll match
     } // while (shouldRun)
 
+    println("NUMBER OF SOLVER CHOICES: " + numChoices)
+    println("NUMBER OF SOLVER BACKTRACKS: " + numBacktracks)
     retval
   } // solve
 }
