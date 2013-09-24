@@ -122,45 +122,65 @@ object Solver {
   }
 
   def solve(problem: CNF): Option[Map[Variable, Boolean]] = {
-    var isUnsat = false
+    import scala.collection.mutable.Stack
     var clauses = problem.clauses
     val vars = problem.variables
-    def doSolve(becauseOf: Option[Variable], state: SolverState): Option[SolverState] = {
-      if (isUnsat) return None
+    // decisions to try in case of backtracking
+    var tryFalseStack = Stack[(Variable, SolverState)]() 
+    var shouldRun = true
+    var justFlipped: Option[Variable] = None
+    var currentState = SolverState(Map(), Map())
+    var retval: Option[Map[Variable, Boolean]] = None
 
-      applyUnitToAll(clauses, becauseOf, state) match {
+    while (shouldRun) {
+      // apply binary constraint propagation
+      applyUnitToAll(clauses, justFlipped, currentState) match {
         case Right(newState) => {
+          // We have no conflicts at this point.  See which variables still need
+          // assignment.
           val diff = vars -- newState.assignments.keys
           if (diff.isEmpty) {
             // we have an assignment for all variables
-            Some(newState)
+            // ensure everything is satisfied
+            assert(clauses.forall(c => isSatisfied(c, newState.assignments)))
+            retval = Some(newState.assignments)
+            shouldRun = false
           } else {
-            // some variables are unspoken for - choose one and set a value
+            // some variables still need assignments - choose one and set a value
             val choice = diff.head
-            doSolve(Some(choice), newState.makeChoice(choice, true)) match {
-              case s@Some(_) => s
-              case None => doSolve(Some(choice), newState.makeChoice(choice, false))
-            }
+
+            // note that we still need to try the false path
+            tryFalseStack.push((choice -> newState))
+
+            // try with true
+            currentState = newState.makeChoice(choice, true)
+            justFlipped = Some(choice)
           }
         }
         case Left(Some(c)) => {
+          // We hit a conflict, and we have a learned clause that illustrates what needs
+          // to be asserted in order to ensure we don't hit this same conflict again
           clauses ::= c
-          println("ADDING IMPLIED CLAUSE: " + c)
-          None
+          
+          // try from the last backtracking point
+          if (tryFalseStack.nonEmpty) {
+            val (v, state) = tryFalseStack.pop
+            currentState = state.makeChoice(v, false)
+            justFlipped = Some(v)
+          } else {
+            shouldRun = false
+          }
         }
         case Left(None) => {
-          isUnsat = true
-          None
+          // We hit a conflict, not due to any particular choice.  This can only
+          // happen when the toplevel clause is unsatisfiable
+          shouldRun = false
         }
-      }
-    }
-    
-    doSolve(None, SolverState(Map(), Map())).map(soln => {
-      assert(soln.assignments.keySet == vars)
-      assert(clauses.forall(c => isSatisfied(c, soln.assignments)))
-      soln.assignments
-    })
-  }
+      } // applyUnitToAll match
+    } // while (shouldRun)
+
+    retval
+  } // solve
 }
 
 object Test {
