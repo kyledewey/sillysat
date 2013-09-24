@@ -3,12 +3,14 @@ package sillysat.solver
 import scala.annotation.tailrec
 import sillysat.syntax._
 
-case class SolverState(assignments: Map[Variable, Boolean], implGraph: Map[Variable, (Clause, Variable)]) {
+case class SolverState(assignments: Map[Variable, Boolean], implGraph: Map[Variable, (Clause, Variable)], atLevels: Map[Variable, Int]) {
   assert(implGraph.keys.forall(k => assignments.contains(k)))
 
-  def makeChoice(variable: Variable, choice: Boolean): SolverState = {
+  def makeChoice(variable: Variable, choice: Boolean, level: Int): SolverState = {
     assert(!assignments.contains(variable))
-    copy(assignments = assignments + (variable -> choice))
+    assert(!atLevels.contains(variable))
+    copy(assignments = assignments + (variable -> choice),
+         atLevels = atLevels + (variable -> level))
   }
 
   def addAssignment(becauseOf: Option[Variable], clause: Clause, changing: Literal): SolverState = {
@@ -27,17 +29,21 @@ case class SolverState(assignments: Map[Variable, Boolean], implGraph: Map[Varia
   def roots(): Set[Variable] =
     implGraph.keySet -- implGraph.values.map(_._2)
 
-  // if there aren't any roots, then the clause must be unsat - this
-  // indicates that we made no arbitrary decisions
-  def makeConflictClause(): Option[Clause] = {
+  // If there aren't any roots, then the clause must be unsat - this
+  // indicates that we made no arbitrary decisions.  We return both
+  // a clause that's learned along with what level we can safely backtrack to.
+  def makeConflictClause(): Option[(Clause, Int)] = {
+    assert(roots.forall(atLevels.contains))
+
     val rts = roots
     if (rts.isEmpty) {
       None
     } else {
       Some(
-        Clause(
+        (Clause(
           rts.map(v =>
-            if (assignments(v)) NegativeAtom(v) else PositiveAtom(v)).toSeq))
+            if (assignments(v)) NegativeAtom(v) else PositiveAtom(v)).toSeq),
+         rts.map(root => atLevels(root)).max))
     }
   }
 }
@@ -92,9 +98,9 @@ object Solver {
   // attempts to apply the unit clause rule to all clauses
   // returns either a new solver state or a clause which explains a conflict
   // repeats this process until a fixpoint is reached
-  def applyUnitToAll(clauses: List[Clause], becauseOf: Option[Variable], state: SolverState): Either[Option[Clause], SolverState] = {
+  def applyUnitToAll(clauses: List[Clause], becauseOf: Option[Variable], state: SolverState): Either[Option[(Clause, Int)], SolverState] = {
     @tailrec
-    def recur(cls: List[Clause], becauseOf: Option[Variable], state: SolverState): Either[Option[Clause], SolverState] = {
+    def recur(cls: List[Clause], becauseOf: Option[Variable], state: SolverState): Either[Option[(Clause, Int)], SolverState] = {
       cls match {
         case head :: tail => {
           if (alwaysUnsatisfied(head, state.assignments)) {
@@ -129,7 +135,7 @@ object Solver {
     var tryFalseStack = Stack[(Variable, SolverState)]() 
     var shouldRun = true
     var justFlipped: Option[Variable] = None
-    var currentState = SolverState(Map(), Map())
+    var currentState = SolverState(Map(), Map(), Map())
     var retval: Option[Map[Variable, Boolean]] = None
 
     while (shouldRun) {
@@ -149,23 +155,36 @@ object Solver {
             // some variables still need assignments - choose one and set a value
             val choice = diff.head
 
+            // in case of failure, pop until the stack is of this length
+            val decisionLevel = tryFalseStack.size
             // note that we still need to try the false path
-            tryFalseStack.push((choice -> newState))
+            tryFalseStack.push((choice, 
+                                newState.makeChoice(choice, false, decisionLevel)))
 
             // try with true
-            currentState = newState.makeChoice(choice, true)
+            currentState = newState.makeChoice(choice, true, decisionLevel)
             justFlipped = Some(choice)
           }
         }
-        case Left(Some(c)) => {
+        case Left(Some((c, dl))) => {
           // We hit a conflict, and we have a learned clause that illustrates what needs
           // to be asserted in order to ensure we don't hit this same conflict again
           clauses ::= c
           
+          // backtrack up to the level specified
+          println("STACK SIZE: " + tryFalseStack.size)
+          println("DL: " + dl)
+
+          val stackSize = tryFalseStack.size
+          assert(dl <= stackSize)
+
+          val popUpTimes = tryFalseStack.size - dl - 1
+          (0 until popUpTimes).foreach(_ => tryFalseStack.pop)
+          
           // try from the last backtracking point
           if (tryFalseStack.nonEmpty) {
             val (v, state) = tryFalseStack.pop
-            currentState = state.makeChoice(v, false)
+            currentState = state
             justFlipped = Some(v)
           } else {
             shouldRun = false
