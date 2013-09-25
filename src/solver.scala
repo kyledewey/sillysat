@@ -3,9 +3,14 @@ package sillysat.solver
 import scala.annotation.tailrec
 import sillysat.syntax._
 
+// represents a state of the solver
+// A state consists of which assignments have been made, the implication graph,
+// and information regarding which decisions were made at which levels of the decision stack
 case class SolverState(assignments: Map[Variable, Boolean], implGraph: Map[Variable, (Clause, Variable)], atLevels: Map[Variable, Int]) {
   assert(implGraph.keys.forall(k => assignments.contains(k)))
 
+  // make the given arbitrary decision
+  // the decision forms a root in the graph
   def makeChoice(variable: Variable, choice: Boolean, level: Int): SolverState = {
     assert(!assignments.contains(variable))
     assert(!atLevels.contains(variable))
@@ -13,6 +18,8 @@ case class SolverState(assignments: Map[Variable, Boolean], implGraph: Map[Varia
          atLevels = atLevels + (variable -> level))
   }
 
+  // similar to makeChoice, but the decision is based on unit clauses instead
+  // of arbitrary choice
   def addAssignment(becauseOf: Option[Variable], clause: Clause, changing: Literal): SolverState = {
     assert(!assignments.contains(changing.v))
     val newGraph = 
@@ -26,12 +33,15 @@ case class SolverState(assignments: Map[Variable, Boolean], implGraph: Map[Varia
          implGraph = newGraph)
   }
 
+  // gets the roots of the implication graph (i.e. those nodes which
+  // have no incoming edges)
   def roots(): Set[Variable] =
     implGraph.keySet -- implGraph.values.map(_._2)
 
   // If there aren't any roots, then the clause must be unsat - this
   // indicates that we made no arbitrary decisions.  We return both
   // a clause that's learned along with what level we can safely backtrack to.
+  // Returns None if there isn't a conflict
   def makeConflictClause(): Option[(Clause, Int)] = {
     assert(roots.forall(atLevels.contains))
 
@@ -58,6 +68,7 @@ object Solver {
       assignments.get(lit.v).map(binding =>
         if (lit.isNegated) !binding else binding).getOrElse(false))
 
+  // gets the literals in the given clause which do not yet have assignments
   def unassignedLiterals(clause: Clause, assignments: Map[Variable, Boolean]): Set[Literal] = 
     clause.literals.filter(lit => !assignments.contains(lit.v)).toSet
 
@@ -85,15 +96,11 @@ object Solver {
     unitLiteral(clause, state.assignments).map(lit => 
       (state.addAssignment(becauseOf, clause, lit), lit.v))
 
+  // determines whether or not the given clause with the given assignments
+  // will always be unsatisfied, even if additional assignments were added
   def alwaysUnsatisfied(clause: Clause, assignments: Map[Variable, Boolean]): Boolean =
     clause.literals.forall(lit =>
       assignments.contains(lit.v) && assignments(lit.v) == lit.isNegated)
-  
-  // this means that both a positive atom and a negative atom with the
-  // same underlying variable is found
-  def literalsConflict(lits: List[Literal]): Boolean =
-    lits.foldLeft(Map[Variable, Set[Literal]]())((res, cur) =>
-      res + (cur.v -> (res.get(cur.v).getOrElse(Set()) + cur))).values.exists(_.size == 2)
   
   // attempts to apply the unit clause rule to all clauses
   // returns either a new solver state or a clause which explains a conflict
@@ -129,15 +136,29 @@ object Solver {
 
   def solve(problem: CNF): Option[Map[Variable, Boolean]] = {
     import scala.collection.mutable.Stack
+    // for statistics gathering
     var numChoices = 0
     var numBacktracks = 0
+
+    // Which clauses to solve.  Since we can learn clauses, this is mutable
     var clauses = problem.clauses
+
+    // which variables are in the problem
     val vars = problem.variables
+
     // decisions to try in case of backtracking
     var tryFalseStack = Stack[(Variable, SolverState)]() 
+
+    // if we should keep running.
     var shouldRun = true
+
+    // Which arbitrary decision was made last
     var justFlipped: Option[Variable] = None
+
+    // Initially, we have made no assignments
     var currentState = SolverState(Map(), Map(), Map())
+
+    // what to return.  By default, we assume it's unsat until proven otherwise
     var retval: Option[Map[Variable, Boolean]] = None
 
     while (shouldRun) {
@@ -157,14 +178,19 @@ object Solver {
             // some variables still need assignments - choose one and set a value
             val choice = diff.head
 
-            // in case of failure, pop until the stack is of this length
+            // in case of failure, go to the given decision level
             val decisionLevel = tryFalseStack.size
-            // note that we still need to try the false path
+
+            // Note somewhere that we still need to try the false path.  If this fails, then
+            // we must have tried everything at higher decision levels (since we always
+            // try true first), so pop up to the previous decision level
             tryFalseStack.push((choice, 
                                 newState.makeChoice(choice, false, decisionLevel - 1)))
 
             // try with true
             numChoices += 1
+
+            // note that we should try false if this fails
             currentState = newState.makeChoice(choice, true, decisionLevel)
             justFlipped = Some(choice)
           }
