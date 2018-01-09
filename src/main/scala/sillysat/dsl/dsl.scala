@@ -29,6 +29,8 @@ case class WrappedConjunction(clauses: Seq[WrappedDisjunction]) {
 }
 
 object DSL {
+  import scala.language.implicitConversions
+
   implicit def symbolToVariable(sym: Symbol): WrappedVariable =
     WrappedVariable(sym.name, false)
 

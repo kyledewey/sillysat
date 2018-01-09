@@ -1,4 +1,7 @@
-*.class
-sillysat
+# Emacs temp files
 *~
 \#*\#
+
+# compiled files / sbt stuff
+project
+target
