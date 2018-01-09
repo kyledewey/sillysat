@@ -4,6 +4,15 @@ import sillysat.dsl._
 
 import org.scalatest.FlatSpec
 
+object TestSolver {
+  def optionToTestResult[A](op: Option[A]): TestResult = {
+    op match {
+      case Some(_) => Satisfiable
+      case None => Unsatisfiable
+    }
+  }
+}
+
 abstract class TestSolver extends FlatSpec {
   def trySolve(f: WrappedFormula): Option[TestResult]
 
