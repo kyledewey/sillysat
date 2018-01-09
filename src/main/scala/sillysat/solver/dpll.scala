@@ -13,12 +13,12 @@ import Debug.debug
 // represents a state of the solver
 // A state consists of which assignments have been made, the implication graph,
 // and information regarding which decisions were made at which levels of the decision stack
-case class SolverState(assignments: Map[Variable, Boolean], implGraph: Map[Variable, (Clause, Variable)], atLevels: Map[Variable, Int]) {
+case class DPLLState(assignments: Map[Variable, Boolean], implGraph: Map[Variable, (Clause, Variable)], atLevels: Map[Variable, Int]) {
   assert(implGraph.keys.forall(k => assignments.contains(k)))
 
   // make the given arbitrary decision
   // the decision forms a root in the graph
-  def makeChoice(variable: Variable, choice: Boolean, level: Int): SolverState = {
+  def makeChoice(variable: Variable, choice: Boolean, level: Int): DPLLState = {
     assert(!assignments.contains(variable))
     assert(!atLevels.contains(variable))
     copy(assignments = assignments + (variable -> choice),
@@ -27,7 +27,7 @@ case class SolverState(assignments: Map[Variable, Boolean], implGraph: Map[Varia
 
   // similar to makeChoice, but the decision is based on unit clauses instead
   // of arbitrary choice
-  def addAssignment(becauseOf: Option[Variable], clause: Clause, changing: Literal): SolverState = {
+  def addAssignment(becauseOf: Option[Variable], clause: Clause, changing: Literal): DPLLState = {
     assert(!assignments.contains(changing.v))
     val newGraph = 
       if (becauseOf.isEmpty || implGraph.contains(becauseOf.get)) {
@@ -65,7 +65,7 @@ case class SolverState(assignments: Map[Variable, Boolean], implGraph: Map[Varia
   }
 }
 
-object Solver {
+object DPLL {
   // determines if a given clause is satisfied based on assignments so far
   // if it's satisfied, then adding any assignments will not change this
   // however, if it's unsatisfied, then it is possible that it will
@@ -99,7 +99,7 @@ object Solver {
   // which forced the unit clause switch, and returns a tuple of the new
   // solver state along with which variable was changed.  If it changes nothing,
   // it returns None
-  def tryApplyUnit(clause: Clause, becauseOf: Option[Variable], state: SolverState): Option[(SolverState, Variable)] =
+  def tryApplyUnit(clause: Clause, becauseOf: Option[Variable], state: DPLLState): Option[(DPLLState, Variable)] =
     unitLiteral(clause, state.assignments).map(lit => 
       (state.addAssignment(becauseOf, clause, lit), lit.v))
 
@@ -112,9 +112,9 @@ object Solver {
   // attempts to apply the unit clause rule to all clauses
   // returns either a new solver state or a clause which explains a conflict
   // repeats this process until a fixpoint is reached
-  def applyUnitToAll(clauses: List[Clause], becauseOf: Option[Variable], state: SolverState): Either[Option[(Clause, Int)], SolverState] = {
+  def applyUnitToAll(clauses: List[Clause], becauseOf: Option[Variable], state: DPLLState): Either[Option[(Clause, Int)], DPLLState] = {
     @tailrec
-    def recur(cls: List[Clause], becauseOf: Option[Variable], state: SolverState): Either[Option[(Clause, Int)], SolverState] = {
+    def recur(cls: List[Clause], becauseOf: Option[Variable], state: DPLLState): Either[Option[(Clause, Int)], DPLLState] = {
       cls match {
         case head :: tail => {
           if (alwaysUnsatisfied(head, state.assignments)) {
@@ -154,7 +154,7 @@ object Solver {
     val vars = problem.variables
 
     // decisions to try in case of backtracking
-    var tryFalseStack = Stack[(Variable, SolverState)]() 
+    var tryFalseStack = Stack[(Variable, DPLLState)]() 
 
     // if we should keep running.
     var shouldRun = true
@@ -163,7 +163,7 @@ object Solver {
     var justFlipped: Option[Variable] = None
 
     // Initially, we have made no assignments
-    var currentState = SolverState(Map(), Map(), Map())
+    var currentState = DPLLState(Map(), Map(), Map())
 
     // what to return.  By default, we assume it's unsat until proven otherwise
     var retval: Option[Map[Variable, Boolean]] = None
@@ -237,25 +237,3 @@ object Solver {
   } // solve
 }
 
-object Test {
-  import sillysat.dsl._
-  import sillysat.dsl.DSL._
-
-  // (x || -y) && (-y || z)
-  val test1 = ('x or 'y.not) and ('y.not or 'z)
-
-  val test2 = ('x1.not or 'x2) and 
-              ('x1.not or 'x3 or 'x5) and
-              ('x2.not or 'x4) and
-              ('x3.not or 'x4.not) and
-              ('x1 or 'x5 or 'x2.not) and
-              ('x2 or 'x3) and
-              ('x2 or 'x3.not) and
-              ('x6 or 'x5.not)
-
-  val test3 = 'x and 'x.not
-
-  val test4 = ('a or 'b or 'c) and ('b or 'c.not or 'f.not) and ('b.not or 'e)
-
-  val test5 = ('a or 'b) and ('a or 'b.not) and ('a.not or 'c) and ('a.not or 'c.not)
-}

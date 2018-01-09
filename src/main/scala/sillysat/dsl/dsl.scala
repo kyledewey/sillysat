@@ -32,9 +32,9 @@ object WrappedFormula {
         f match {
           case WrappedAnd(f1, f2) => {
             for {
-              c <- asClause(f1)
+              CNF(first) <- asCNF(f1)
               CNF(rest) <- asCNF(f2)
-            } yield CNF(c :: rest)
+            } yield CNF(first ++ rest)
           }
           case _ => None
         }
@@ -48,12 +48,21 @@ sealed trait WrappedFormula {
   def and(other: WrappedFormula): WrappedFormula = WrappedAnd(this, other)
   def or(other: WrappedFormula): WrappedFormula = WrappedOr(this, other)
   def asCNF: Option[CNF] = WrappedFormula.asCNF(this)
+  def toFormula: Formula
 }
 
-case class WrappedVariable(name: String) extends WrappedFormula
-case class WrappedNot(f: WrappedFormula) extends WrappedFormula
-case class WrappedAnd(f1: WrappedFormula, f2: WrappedFormula) extends WrappedFormula
-case class WrappedOr(f1: WrappedFormula, f2: WrappedFormula) extends WrappedFormula
+case class WrappedVariable(name: String) extends WrappedFormula {
+  def toFormula: Formula = Variable(name)
+}
+case class WrappedNot(f: WrappedFormula) extends WrappedFormula {
+  def toFormula: Formula = Not(f.toFormula)
+}
+case class WrappedAnd(f1: WrappedFormula, f2: WrappedFormula) extends WrappedFormula {
+  def toFormula: Formula = And(f1.toFormula, f2.toFormula)
+}
+case class WrappedOr(f1: WrappedFormula, f2: WrappedFormula) extends WrappedFormula {
+  def toFormula: Formula = Or(f1.toFormula, f2.toFormula)
+}
 
 object DSL {
   import scala.language.implicitConversions
