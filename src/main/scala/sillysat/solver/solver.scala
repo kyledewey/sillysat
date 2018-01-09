@@ -3,6 +3,13 @@ package sillysat.solver
 import scala.annotation.tailrec
 import sillysat.syntax._
 
+object Debug {
+  def debug(msg: => String) {
+    //println(msg)
+  }
+}
+import Debug.debug
+
 // represents a state of the solver
 // A state consists of which assignments have been made, the implication graph,
 // and information regarding which decisions were made at which levels of the decision stack
@@ -198,7 +205,7 @@ object Solver {
         case Left(Some((c, dl))) => {
           // We hit a conflict, and we have a learned clause that illustrates what needs
           // to be asserted in order to ensure we don't hit this same conflict again
-          println("ADDING CLAUSE: " + c)
+          debug("ADDING CLAUSE: " + c)
           clauses ::= c
           
           // backtrack up to the level specified
@@ -224,8 +231,8 @@ object Solver {
       } // applyUnitToAll match
     } // while (shouldRun)
 
-    println("NUMBER OF SOLVER CHOICES: " + numChoices)
-    println("NUMBER OF SOLVER BACKTRACKS: " + numBacktracks)
+    debug("NUMBER OF SOLVER CHOICES: " + numChoices)
+    debug("NUMBER OF SOLVER BACKTRACKS: " + numBacktracks)
     retval
   } // solve
 }
